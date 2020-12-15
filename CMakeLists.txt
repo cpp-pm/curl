@@ -47,11 +47,11 @@ include(CheckCCompilerFlag)
 
 include(CMake/HunterGate.cmake)
 HunterGate(
-    URL "https://github.com/ruslo/hunter/archive/v0.22.30.tar.gz"
-    SHA1 "380a7687ea63898b59a3ee6e3d7c39b1faa1aadc"
+    URL "https://github.com/cpp-pm/hunter/archive/v0.23.288.tar.gz"
+    SHA1 "6c9b2bc606d86ae31f96a62fc68f0a593024815b"
 )
 
-project( CURL C )
+project(CURL C)
 
 file(STRINGS ${CURL_SOURCE_DIR}/include/curl/curlver.h CURL_VERSION_H_CONTENTS REGEX "#define LIBCURL_VERSION( |_NUM )")
 string(REGEX MATCH "#define LIBCURL_VERSION \"[^\"]*"
@@ -357,9 +357,11 @@ option(CMAKE_USE_OPENSSL "Use OpenSSL code. Experimental" ${openssl_default})
 
 option(CMAKE_USE_BORINGSSL "Use BoringSSL" OFF)
 
-collect_true(enabled_ssl_options enabled_ssl_options_count
+count_true(enabled_ssl_options enabled_ssl_options_count
   CMAKE_USE_WINSSL
   CMAKE_USE_DARWINSSL
+  CMAKE_USE_SCHANNEL
+  CMAKE_USE_SECTRANSP
   CMAKE_USE_OPENSSL
   CMAKE_USE_MBEDTLS
   CMAKE_USE_BEARSSL
@@ -680,14 +682,15 @@ check_library_exists("${CURL_LIBS}" dlopen "" HAVE_DLOPEN)
 
 set(HAVE_LIBZ OFF)
 set(HAVE_ZLIB_H OFF)
-set(HAVE_ZLIB OFF)
+set(USE_ZLIB OFF)
+option(CURL_ZLIB "Set to ON to enable building curl with zlib support." ON)
 if(CURL_ZLIB)
   hunter_add_package(ZLIB)
   find_package(ZLIB CONFIG REQUIRED)
   if(ZLIB_FOUND)
     set(HAVE_ZLIB_H ON)
-    set(HAVE_ZLIB ON)
     set(HAVE_LIBZ ON)
+    set(USE_ZLIB ON)
 
     if(HUNTER_ENABLED)
       list(APPEND CURL_LIBS ZLIB::zlib)
@@ -713,6 +716,23 @@ if(CURL_BROTLI)
     include_directories(${BROTLI_INCLUDE_DIRS})
     list(APPEND CMAKE_REQUIRED_INCLUDES ${BROTLI_INCLUDE_DIRS})
   endif()
+endif()
+
+option(CURL_ZSTD "Set to ON to enable building curl with zstd support." OFF)
+set(HAVE_ZSTD OFF)
+if(CURL_ZSTD)
+  hunter_add_package(zstd)
+  find_package(zstd CONFIG REQUIRED)
+  if(ZLIB_FOUND)
+    set(HAVE_ZSTD ON)
+    if(HUNTER_ENABLED)
+      list(APPEND CURL_LIBS zstd::libzstd_static)
+    else()
+      list(APPEND CURL_LIBS ${ZSTD_LIBRARIES})
+    endif()
+    include_directories(${ZSTD_INCLUDE_DIRS})
+  endif()
+  list(APPEND CMAKE_REQUIRED_INCLUDES ${ZSTD_INCLUDE_DIRS})
 endif()
 
 hunter_add_package(intsizeof)
@@ -1610,6 +1630,27 @@ install(FILES "${CURL_BINARY_DIR}/libcurl.pc"
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/curl"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h")
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${version_config}"
+    VERSION ${CURL_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Use:
+# * TARGETS_EXPORT_NAME
+# * PROJECT_NAME
+configure_package_config_file(CMake/curl-config.cmake.in
+        "${project_config}"
+        INSTALL_DESTINATION ${CURL_INSTALL_CMAKE_DIR}
+)
+
+install(
+        EXPORT "${TARGETS_EXPORT_NAME}"
+        NAMESPACE "${PROJECT_NAME}::"
+        DESTINATION ${CURL_INSTALL_CMAKE_DIR}
+)
 
 install(
         FILES ${version_config} ${project_config}
